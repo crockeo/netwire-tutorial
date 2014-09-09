@@ -22,12 +22,6 @@ s :: Float
 s = 0.05
 
 {-|
-  The y position.
--}
-y :: Float
-y = 0
-
-{-|
   The global accelerational speed.
 -}
 speed :: Float
@@ -81,6 +75,21 @@ withInput :: (a -> b) -> Wire s e m a b
 withInput fn = mkPure_ $ \a -> Right $ fn a
 
 {-|
+  Generating two different directional acceleration / deceleration functions.
+-}
+dAcceleration :: (Enum k, Monoid e) => k -> k -> Wire s e IO Float Float
+dAcceleration k1 k2  =  withInput decel . isKeyDown k1 . isKeyDown k2
+                    <|> pure ( speed)   . isKeyDown k1
+                    <|> pure (-speed)   . isKeyDown k2
+                    <|> withInput decel
+  where decel :: Float -> Float
+        decel x
+          | x <  (-minSpeed)                     = ( speed)
+          | x >  ( minSpeed)                     = (-speed)
+          | x >= (-minSpeed) && x <= ( minSpeed) = (-x)
+
+
+{-|
   The acceleration of the quad.
 -}
 acceleration :: Monoid e => Wire s e IO Float Float
@@ -96,20 +105,33 @@ acceleration  =  withInput decel . leftKeyDown . rightKeyDown
           | otherwise = 0
 
 {-|
+  The velocity of the quad.
+-}
+velocity :: (HasTime t s, Monoid e) => Wire s e IO (Float, Float) (V2 Float)
+velocity = integral 0 . withInput (uncurry V2)
+
+{-|
+  The position on the quad.
+-}
+position :: (HasTime t s, Monoid e) => Wire s e IO (V2 Float) (V2 Float)
+position = integral 0
+
+{-|
   The final position of the quad.
 -}
-fPos :: HasTime t s => Wire s () IO () Float
+fPos :: HasTime t s => Wire s () IO a (V2 Float)
 fPos = proc _ -> do
-  rec a <- acceleration -< v
-      v <- integral 0   -< a
-      p <- integral 0   -< v
+  rec x            <- dAcceleration (CharKey 'D') (CharKey 'A') -< vx
+      y            <- dAcceleration (CharKey 'W') (CharKey 'S') -< vy
+      v@(V2 vx vy) <- velocity                                  -< (x, y)
+      p            <- position                                  -< v
 
   returnA -< p
 
 {-|
   Actually running the network, and performing OpenGL calls on the result.
 -}
-runNetwork' :: IORef Bool -> Session IO s -> Wire s e IO a Float -> IO ()
+runNetwork' :: IORef Bool -> Session IO s -> Wire s e IO a (V2 Float) -> IO ()
 runNetwork' closedRef session wire = do
   closed <- readIORef closedRef
   if closed
@@ -119,7 +141,7 @@ runNetwork' closedRef session wire = do
       (dw', wire'   ) <- stepWire wire st $ Right undefined
       case dw' of
         Left  _      -> return ()
-        Right x -> do
+        Right (V2 x y) -> do
           clear [ColorBuffer]
 
           renderPrimitive Quads $
