@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows #-}
 module Main where
 
 --------------------
@@ -9,6 +10,7 @@ import Control.Wire
 import FRP.Netwire
 import Data.IORef
 import Linear.V2
+import Debug.Trace
 
 ----------
 -- Code --
@@ -20,10 +22,22 @@ s :: Float
 s = 0.05
 
 {-|
+  The y position.
+-}
+y :: Float
+y = 0
+
+{-|
   The global accelerational speed.
 -}
 speed :: Float
 speed = 1.0
+
+{-|
+  The minimum speed.
+-}
+minSpeed :: Float
+minSpeed = 0.01
 
 {-|
   The maximum speed.
@@ -41,72 +55,61 @@ initPos = pure 0
   Checking if a given key is held down. The wire blocks when the key is not
   held down, and does not block when the key is held down.
 -}
-isKeyDown :: Enum k => k -> Wire s () IO a ()
+isKeyDown :: (Monoid e, Enum k) => k -> Wire s e IO a a
 isKeyDown k =
-  mkGen_ $ \_ -> do
+  mkGen_ $ \a -> do
     s <- getKey k
     return $ case s of
-      Release -> Left ()
-      Press   -> Right ()
-
+      Release -> Left  mempty
+      Press   -> Right a
 {-|
   Wire for if the key to go left is down specifically.
 -}
-upKeyDown :: Wire s () IO a ()
-upKeyDown = isKeyDown $ CharKey 'W'
-
-{-|
-  Wire for if the key to go right is down specifically.
--}
-downKeyDown :: Wire s () IO a ()
-downKeyDown = isKeyDown $ CharKey 'S'
-
-{-|
-  Wire for if the key to go left is down specifically.
--}
-leftKeyDown :: Wire s () IO a ()
+leftKeyDown :: Monoid e => Wire s e IO a a
 leftKeyDown = isKeyDown $ CharKey 'A'
 
 {-|
   Wire for if the key to go right is down specifically.
 -}
-rightKeyDown :: Wire s () IO a ()
+rightKeyDown :: Monoid e => Wire s e IO a a
 rightKeyDown = isKeyDown $ CharKey 'D'
 
 {-|
-  The acceleration (and therefore deceleration) of the quad.
+  Performing some action with an input.
 -}
-acceleration :: Wire s () IO a (V2 Float)
-acceleration =
-  liftA2 V2 xAcc yAcc
-  where xAcc :: Wire s () IO a Float
-        xAcc  =  pure  0       . leftKeyDown . rightKeyDown
-             <|> pure (-speed) . leftKeyDown
-             <|> pure ( speed) . rightKeyDown
-             <|> pure  0
-
-        yAcc :: Wire s () IO a Float
-        yAcc  =  pure  0       . upKeyDown . downKeyDown
-             <|> pure ( speed) . upKeyDown
-             <|> pure (-speed) . downKeyDown
-             <|> pure  0
+withInput :: (a -> b) -> Wire s e m a b
+withInput fn = mkPure_ $ \a -> Right $ fn a
 
 {-|
-  The current velocity of the quad.
+  The acceleration of the quad.
 -}
-velocity :: HasTime t s => Wire s () IO a (V2 Float)
-velocity = integral 0 . acceleration
+acceleration :: Monoid e => Wire s e IO Float Float
+acceleration  =  withInput decel . leftKeyDown . rightKeyDown
+             <|> pure (-speed)   . leftKeyDown
+             <|> pure ( speed)   . rightKeyDown
+             <|> withInput decel
+  where decel :: Float -> Float
+        decel x
+          | x < (-minSpeed)     = ( speed)
+          | x > ( minSpeed)     = (-speed)
+          | x > (-minSpeed) && x < ( minSpeed) = (-x)
+          | otherwise = 0
 
 {-|
-  The position of the quad, this time in 2 dimensions.
+  The final position of the quad.
 -}
-position :: HasTime t s => Wire s () IO a (V2 Float)
-position = integral initPos . velocity
+fPos :: HasTime t s => Wire s () IO () Float
+fPos = proc _ -> do
+  rec a <- acceleration -< v
+      v <- integral 0   -< a
+      p <- integral 0   -< v
+
+  returnA -< p
 
 {-|
   Actually running the network, and performing OpenGL calls on the result.
 -}
-runNetwork' :: IORef Bool -> Session IO s -> Wire s e IO a (V2 Float) -> IO ()
+runNetwork' :: IORef Bool -> Session IO s -> Wire s e IO a Float -> IO ()
 runNetwork' closedRef session wire = do
   closed <- readIORef closedRef
   if closed
@@ -115,8 +118,8 @@ runNetwork' closedRef session wire = do
       (st , session') <- stepSession session
       (dw', wire'   ) <- stepWire wire st $ Right undefined
       case dw' of
-        Left  _  -> return ()
-        Right (V2 x y) -> do
+        Left  _      -> return ()
+        Right x -> do
           clear [ColorBuffer]
 
           renderPrimitive Quads $
@@ -137,7 +140,7 @@ runNetwork' closedRef session wire = do
 -}
 runNetwork :: IORef Bool -> IO ()
 runNetwork closedRef =
-  runNetwork' closedRef clockSession_ position
+  runNetwork' closedRef clockSession_ fPos
 
 {-|
   The entry point to the program. It handles creating the GLFW window and the
