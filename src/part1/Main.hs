@@ -21,14 +21,14 @@ initX = 0
 {-|
   The y-coordinate of the QUAD to be drawn.
 -}
-y :: Float
-y = 0
+yPosition :: Float
+yPosition = 0
 
 {-|
   The size of the QUAD to be drawn.
 -}
-s :: Float
-s = 0.05
+quadSize :: Float
+quadSize = 0.05
 
 {-|
   The speed in which the QUAD should move.
@@ -93,10 +93,10 @@ runNetwork' closedRef session wire = do
 
           renderPrimitive Quads $
             mapM_ (\(x, y) -> vertex $ Vertex2 (realToFrac x :: GLfloat) (realToFrac y :: GLfloat))
-                  [ (x - s, y - s)
-                  , (x + s, y - s)
-                  , (x + s, y + s)
-                  , (x - s, y + s)
+                  [ (x - quadSize, yPosition - quadSize)
+                  , (x + quadSize, yPosition - quadSize)
+                  , (x + quadSize, yPosition + quadSize)
+                  , (x - quadSize, yPosition + quadSize)
                   ]
 
           swapBuffers
