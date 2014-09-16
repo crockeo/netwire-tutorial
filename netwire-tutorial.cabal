@@ -39,3 +39,18 @@ executable part2
   hs-source-dirs:      src/part2/
 
   default-language:    Haskell2010
+
+executable part3
+  ghc-options:         -Wall -fno-warn-unused-do-bind
+
+  main-is:             Main.hs
+
+  build-depends:       base    == 4.7.*
+               ,       netwire == 5.0.0
+               ,       GLFW    == 0.5.2.2
+               ,       linear  == 1.10.1.2
+               ,       OpenGL
+
+  hs-source-dirs:      src/part3/
+
+  default-language:    Haskell2010
