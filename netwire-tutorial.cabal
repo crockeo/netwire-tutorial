@@ -16,7 +16,7 @@ executable part1
 
   main-is:             Main.hs
 
-  build-depends:       base    == 4.7.*
+  build-depends:       base    >= 4.5 && base < 5
                ,       netwire == 5.0.0
                ,       GLFW    == 0.5.2.2
                ,       OpenGL
